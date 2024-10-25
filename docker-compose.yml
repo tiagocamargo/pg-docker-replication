@@ -1,0 +1,69 @@
+services:
+  postgres_primary:
+    image: postgres
+    container_name: postgres_primary
+    environment:
+      POSTGRES_DB: mydb
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: adminpass
+    volumes:
+      - ./primary/data:/var/lib/postgresql/data
+      - ./config/primary.conf:/etc/postgresql/postgresql.conf
+      - ./00_init.sql:/docker-entrypoint-initdb.d/00_init.sql
+      - ./config/pg_hba.conf:/etc/postgresql/pg_hba.conf
+    ports:
+      - "5432:5432"
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U admin -d mydb" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres_replica1:
+    image: postgres
+    container_name: postgres_replica1
+    environment:
+      POSTGRES_DB: mydb
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: adminpass
+    volumes:
+      - ./replica1/data:/var/lib/postgresql/data
+      - ./config/replica.conf:/etc/postgresql/postgresql.conf
+      - ./config/pg_hba.conf:/etc/postgresql/pg_hba.conf
+    ports:
+      - "5433:5432"
+    command: >
+      bash -c "
+        rm -rf /var/lib/postgresql/data/* &&
+        pg_basebackup -h postgres_primary -U replicator -p 5432 -D /var/lib/postgresql/data -Fp -Xs -P &&
+        echo 'primary_conninfo = ''host=postgres_primary port=5432 user=replicator password=repl_password application_name=replica1''' >> /var/lib/postgresql/data/postgresql.auto.conf &&
+        postgres -c config_file=/etc/postgresql/postgresql.conf
+      "
+    depends_on:
+      postgres_primary:
+        condition: service_healthy
+
+  postgres_replica2:
+    image: postgres
+    container_name: postgres_replica2
+    environment:
+      POSTGRES_DB: mydb
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: adminpass
+    volumes:
+      - ./replica2/data:/var/lib/postgresql/data
+      - ./config/replica.conf:/etc/postgresql/postgresql.conf
+      - ./config/pg_hba.conf:/etc/postgresql/pg_hba.conf
+    ports:
+      - "5434:5432"
+    command: >
+      bash -c "
+        rm -rf /var/lib/postgresql/data/* &&
+        pg_basebackup -h postgres_primary -U replicator -p 5432 -D /var/lib/postgresql/data -Fp -Xs -P &&
+        echo 'primary_conninfo = ''host=postgres_primary port=5432 user=replicator password=repl_password application_name=replica2''' >> /var/lib/postgresql/data/postgresql.auto.conf &&
+        postgres -c config_file=/etc/postgresql/postgresql.conf
+      "
+    depends_on:
+      postgres_primary:
+        condition: service_healthy
